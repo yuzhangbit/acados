@@ -1,0 +1,32 @@
+From 26ff48b8453f764a40c10462f894cc78f41b263a Mon Sep 17 00:00:00 2001
+From: yuzhangbit <yu.zhang.bit@gmail.com>
+Date: Sat, 21 Aug 2021 11:07:15 +0800
+Subject: [PATCH] fix profiling bug
+
+---
+ src/util.c | 9 +++++++--
+ 1 file changed, 7 insertions(+), 2 deletions(-)
+
+diff --git a/src/util.c b/src/util.c
+index a97ec7eb..246ab5fc 100644
+--- a/src/util.c
++++ b/src/util.c
+@@ -124,8 +124,13 @@ void print_setup_header(const OSQPWorkspace *work) {
+   if (settings->polish) c_print("polish: on, ");
+   else c_print("polish: off, ");
+ 
+-  if (settings->time_limit) c_print("time_limit: %.2e sec\n", settings->time_limit);
+-  else c_print("time_limit: off\n");
++# ifdef PROFILING
++  if (settings->time_limit) {
++    c_print("time_limit: %.2e sec\n", settings->time_limit);
++  } else {
++    c_print("time_limit: off\n");
++  }
++# endif
+ 
+   c_print("\n");
+ }
+-- 
+2.25.1
+
