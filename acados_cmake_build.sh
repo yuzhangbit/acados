@@ -8,13 +8,14 @@ rm -rf acados && git clone https://github.com/yuzhangbit/acados.git &&
 cd /tmp/acados && git checkout tag_osqp_0.6 && git submodule update --recursive --init
 
 # apply patches
-cd /tmp/acados && patch external/osqp/src/util.c -i 0001-fix-profiling-bug.patch
+cd /tmp/acados 
+patch external/osqp/src/util.c -i 0001-fix-profiling-bug.patch
 # compiling
 cd /tmp/acados && mkdir -p build && cd /tmp/acados/build
 cmake ..  -DACADOS_UNIT_TESTS=TRUE   \
-          -DACADOS_WITH_QPOASES=FALSE \
-          -DACADOS_WITH_HPMPC=FALSE \
-          -DACADOS_WITH_QPDUNES=FALSE \
+          -DACADOS_WITH_QPOASES=TRUE \
+          -DACADOS_WITH_HPMPC=TRUE \
+          -DACADOS_WITH_QPDUNES=TRUE \
           -DACADOS_WITH_OSQP=TRUE \
           -DACADOS_PYTHON=TRUE \
           -DACADOS_EXAMPLES=TRUE \
