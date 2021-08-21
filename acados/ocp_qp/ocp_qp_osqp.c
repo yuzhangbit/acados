@@ -1002,6 +1002,7 @@ static void *osqp_workspace_assign(int n, int m, int P_nnzmax, int A_nnzmax, voi
 
 static int osqp_init_data(OSQPData *data, OSQPSettings *settings, OSQPWorkspace *work)
 {
+    c_int exitflag;
     c_int n = data->n;
     c_int m = data->m;
 
@@ -1065,9 +1066,9 @@ static int osqp_init_data(OSQPData *data, OSQPSettings *settings, OSQPWorkspace 
         return 0;
     }
 
-    // Initialize linear system solver structure
-    work->linsys_solver = init_linsys_solver(work->data->P, work->data->A, work->settings->sigma,
-                                             work->rho_vec, work->settings->linsys_solver, 0);
+    // Initialize linear system solver structure      update zy
+    exitflag = init_linsys_solver(&(work->linsys_solver), work->data->P, work->data->A,
+        work->settings->sigma, work->rho_vec, work->settings->linsys_solver, 0);
 
     if (!work->linsys_solver) return 0;
 
