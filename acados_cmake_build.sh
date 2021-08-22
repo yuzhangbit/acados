@@ -21,5 +21,5 @@ cmake ..  -DACADOS_UNIT_TESTS=TRUE   \
           -DACADOS_EXAMPLES=TRUE \
           -DACADOS_INSTALL_DIR=${HOME}/acados_osqp6
 make -j16
-cp -r /tmp/acados/build ${HOME}/acados_osqp6
 make install
+cp -r /tmp/acados/build ${HOME}/acados_osqp6
