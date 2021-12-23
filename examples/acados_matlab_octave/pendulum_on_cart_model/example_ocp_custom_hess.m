@@ -31,24 +31,26 @@
 % POSSIBILITY OF SUCH DAMAGE.;
 %
 
-function model = test_template_pendulum_ocp(cost_type)
-% supports cost_type = auto, nonlinear_ls, ext_cost
-
 %% test of native matlab interface
-model_path = fullfile(pwd,'..','pendulum_on_cart_model');
-addpath(model_path)
+clear all
+import casadi.*
+
+% model_path = fullfile(pwd,'..','pendulum_on_cart_model');
+% addpath(model_path)
+% check_acados_requirements()
 
 %% discretization
-N = 20;
-T = 1; % time horizon length
+N = 40;
+T = 2; % time horizon length
 x0 = [0; pi; 0; 0];
+xf = [0; 0; 0; 0];
 
 nlp_solver = 'sqp'; % sqp, sqp_rti
 qp_solver = 'partial_condensing_hpipm';
     % full_condensing_hpipm, partial_condensing_hpipm, full_condensing_qpoases
 qp_solver_cond_N = 5; % for partial condensing
 % integrator type
-sim_method = 'irk'; % erk, irk, irk_gnsf
+sim_method = 'erk'; % erk, irk, irk_gnsf
 
 %% model dynamics
 model = pendulum_on_cart_model;
@@ -69,19 +71,34 @@ ocp_model.set('sym_u', model.sym_u);
 ocp_model.set('sym_xdot', model.sym_xdot);
 
 % cost
-ocp_model.set('cost_type', cost_type);
-ocp_model.set('cost_type_e', cost_type);
+ocp_model.set('cost_type', 'ext_cost');
+ocp_model.set('cost_type_e', 'ext_cost');
 
-if strcmp(cost_type, 'auto') || strcmp(cost_type, 'ext_cost')
+W_u = 1e-3;
+theta = model.sym_x(2);
+model.expr_ext_cost = tanh(theta)^2 + .5 * (model.sym_x(1)^2 + W_u* model.sym_u^2);
+model.expr_ext_cost_e = tanh(theta)^2 + .5 * model.sym_x(1)^2;
+
+custom_hess_u = W_u;
+% J is jacobian of inner (linear function);
+
+J = horzcat(SX.eye(2), SX(2,2));
+% diagonal matrix with second order terms of outer loss function.
+D = SX.sym('D', Sparsity.diag(2));
+D(1, 1) = 1;
+[hess_tan, grad_tan] = hessian( tanh(theta)^2, theta);
+D(2, 2) = if_else(theta == 0, hess_tan, grad_tan / theta);
+
+custom_hess_x = J' * D * J;
+
+cost_expr_ext_cost_custom_hess = blkdiag(custom_hess_u, custom_hess_x);
+cost_expr_ext_cost_custom_hess_e = custom_hess_x;
+
+
 ocp_model.set('cost_expr_ext_cost', model.expr_ext_cost);
 ocp_model.set('cost_expr_ext_cost_e', model.expr_ext_cost_e);
-else % nonlinear_ls
-ocp_model.set('cost_W', model.W);
-ocp_model.set('cost_expr_y', model.cost_expr_y);
-ocp_model.set('cost_W_e', model.W_e);
-ocp_model.set('cost_expr_y_e', model.cost_expr_y_e);
-end
-
+ocp_model.set('cost_expr_ext_cost_custom_hess', cost_expr_ext_cost_custom_hess);
+ocp_model.set('cost_expr_ext_cost_custom_hess_e', cost_expr_ext_cost_custom_hess_e);
 
 % dynamics
 if (strcmp(sim_method, 'erk'))
@@ -95,7 +112,7 @@ end
 % constraints
 ocp_model.set('constr_type', 'auto');
 ocp_model.set('constr_expr_h', model.expr_h);
-U_max = 80;
+U_max = 35;
 ocp_model.set('constr_lh', -U_max); % lower bound on h
 ocp_model.set('constr_uh', U_max);  % upper bound on h
 
@@ -109,13 +126,19 @@ ocp_opts.set('nlp_solver', nlp_solver);
 ocp_opts.set('sim_method', sim_method);
 ocp_opts.set('qp_solver', qp_solver);
 ocp_opts.set('qp_solver_cond_N', qp_solver_cond_N);
-ocp_opts.set('collocation_type', 'gauss_radau_iia');
+ocp_opts.set('globalization', 'merit_backtracking');
+ocp_opts.set('nlp_solver_max_iter', 500);
 % ... see ocp_opts.opts_struct to see what other fields can be set
 
 %% create ocp solver
 ocp = acados_ocp(ocp_model, ocp_opts);
 
 x_traj_init = zeros(nx, N+1);
+
+taus = linspace(0,1, N+1);
+for i=1:N+1
+    x_traj_init(:, 1) = x0*(1-taus(i)) + xf*taus(i);
+end
 u_traj_init = zeros(nu, N);
 
 %% call ocp solver
@@ -125,61 +148,43 @@ ocp.set('constr_x0', x0);
 % set trajectory initialization
 ocp.set('init_x', x_traj_init);
 ocp.set('init_u', u_traj_init);
-ocp.set('init_pi', zeros(nx, N))
+% ocp.set('init_pi', zeros(nx, N))
+
+% change values for specific shooting node using:
+%   ocp.set('field', value, optional: stage_index)
+% ocp.set('constr_lbx', x0, 0)
 
 % solve
 ocp.solve();
 % get solution
-u_ref = ocp.get('u');
-x_ref = ocp.get('x');
+utraj = ocp.get('u');
+xtraj = ocp.get('x');
 
 status = ocp.get('status'); % 0 - success
+ocp.print('stat')
 
-
-if status~=0
-    error('test_ocp_templated_mex: solution of original MEX failed!');
-else
-    fprintf('\ntest_ocp_templated_mex: original MEX success!\n');
+%% Plots
+ts = linspace(0, T, N+1);
+figure; hold on;
+States = {'p', 'theta', 'v', 'dtheta'};
+for i=1:length(States)
+    subplot(length(States), 1, i);
+    plot(ts, xtraj(i,:)); grid on;
+    ylabel(States{i});
+    xlabel('t [s]')
 end
 
-warning('off');
+figure
+stairs(ts, [utraj'; utraj(end)])
+ylabel('F [N]')
+xlabel('t [s]')
+grid on
 
+%% go embedded
+% to generate templated C code
+% ocp.generate_c_code;
 
-ocp.generate_c_code
-cd c_generated_code/
-
-% templated MEX
-t_ocp = pendulum_mex_solver;
-t_ocp.solve
-t_ocp.print
-u_t = t_ocp.get('u');
-x_t = t_ocp.get('x');
-status = t_ocp.get('status');
-
-if status~=0
-    error('test_template_pendulum_ocp: solution of templated MEX failed!');
-else
-    fprintf('\ntest_template_pendulum_ocp: templated MEX success!\n');
-end
-
-
-% comparison
-format short e
-err_u = max(abs(u_ref - u_t))
-err_x = max(max(abs(x_ref - x_t)))
-
-tol_x = 1e-6;
-tol_u = 1e-5;
-if err_x > tol_x
-    error(['test_template_pendulum_ocp: solution of templated MEX and original MEX',...
-         ' differ too much. error in states is ', num2str(err_x),...
-         '. Should be less then ', num2str(tol_x) ]);
-elseif err_u > tol_u
-    error(['test_template_pendulum_ocp: solution of templated MEX and original MEX',...
-         ' differ too much. error in controls is ', num2str(err_x),...
-         '. Should be less then ', num2str(tol_x) ]);
-end
-
-cd ..
-
-end
+% test MEX template based solver
+% cd c_generated_code
+% command = strcat('t_ocp = ', model_name, '_mex_solver');
+% eval( command );
